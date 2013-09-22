@@ -1,0 +1,1019 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+
+    <base target="_blank" />
+    <title>Overview of Web Audio API</title>
+
+    <meta name="description" content="An Overview of Web Audio API">
+    <meta name="author" content="Gaëtan Renaudeau">
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <link rel="stylesheet" href="css/reveal.min.css">
+    <link rel="stylesheet" href="css/theme/moon.css" id="theme">
+
+    <!-- For syntax highlighting -->
+    <link rel="stylesheet" href="lib/css/zenburn.css">
+
+    <!-- If the query includes 'print-pdf', use the PDF print sheet -->
+    <script>
+      document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+
+    <style type="text/css">
+      .reveal h2 {
+        text-transform: initial;
+      }
+    </style>
+    <script type="text/javascript" src="bower_components/q/q.js"></script>
+    <script type="text/javascript" src="bower_components/jquery/jquery.min.js"></script>
+    <script type="text/javascript" src="bower_components/underscore/underscore-min.js"></script>
+    <script type="text/javascript" src="bower_components/backbone/backbone-min.js"></script>
+    <script type="text/javascript" src="audioutils.js"></script>
+    <script type="text/javascript" src="audioparams.js"></script>
+    <script type="text/javascript" src="audioviz.js"></script>
+  </head>
+
+  <body>
+    <script type="text/javascript">
+    window.onerror = function (e) {
+      if (!console || !console.error) alert(e);
+    }
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var music1 = loadSound(ctx, "audio/natura_morta.mp3");
+    var music2 = loadSound(ctx, "audio/you_want_make_me_down.mp3");
+    var userAudio = (function (d) {
+      navigator.getUserMedia({ audio: true }, d.resolve, d.reject);
+      return d.promise;
+    }(Q.defer()));
+  var microphone = userAudio.then(function (stream) {
+    var mic = ctx.createMediaStreamSource(stream);
+    var gain = ctx.createGain();
+    gain.gain.value = 10;
+    var compr = ctx.createDynamicsCompressor();
+    mic.connect(gain);
+    gain.connect(compr);
+    return compr;
+  });
+    </script>
+
+    <div class="reveal">
+
+      <!-- Any section element inside of this container is displayed as a slide -->
+      <div class="slides">
+        <section data-markdown>
+          # Web Audio API
+
+          ## Overview
+
+          by Gaëtan Renaudeau - <a href="http://twitter.com/greweb">@greweb</a>
+        </section>
+
+        <section data-markdown>
+          # Summary
+
+          * Audio basics
+          * DSP
+          * Visualizing sound
+          * The Web Audio API
+          * AudioNodes...
+        </section>
+
+        <section>
+        <section data-markdown>
+          # Audio Basics
+        </section>
+
+        <section data-markdown>
+          ### Compression wave
+          
+          * Air density variation
+          * Longitudinal, like a spring
+          * Propagation: ~ 343 m/s in dry air, 20°C
+
+          ![](./images/compressions.gif)
+        </section>
+
+        <section data-markdown>
+          ### Amplitude
+
+          * Decibel: Difference of sound pressure
+
+          ![](./images/amplitude.png)
+        </section>
+
+        <section data-markdown>
+          ### Frequency
+
+          * Vibration speed (in Hertz = pulse per second)
+          * human hearing range: 20 Hz to 20'000 Hz
+
+          ![](./images/frequency.png)
+        </section>
+        </section>
+
+        <section>
+        <section data-markdown>
+          # Digital Signal Processing
+        </section>
+
+        <section data-markdown>
+          ## Quantization
+
+          ![](./images/quantization.png)
+        </section>
+        </section>
+
+        <section>
+        <section data-markdown>
+          # Visualizing sound
+        </section>
+
+        <section>
+          <h2>Waveform</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var out = ctx.createGain();
+          var waveform = new Waveform({
+            width: 960,
+            height: 512
+          });
+          var waveformView = new WaveformView({
+            model: waveform
+          });
+          waveformView.$el.appendTo(div);
+          waveform.setNode(out, ctx);
+
+          microphone.then(function (m) {
+            m.connect(out);
+          });
+
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            waveform.update();
+          }());
+          end.then(function () {
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+
+        <section>
+          <h2>Spectrum Analyzer</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var out = ctx.createGain();
+          var spectrum = new Spectrum({
+            width: 960,
+            height: 512
+          });
+          var spectrumView = new SpectrumView({
+            model: spectrum
+          });
+          spectrumView.$el.appendTo(div);
+          spectrum.setNode(out, ctx);
+
+          microphone.then(function (m) {
+            m.connect(out);
+          });
+
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            spectrum.update();
+          }());
+          end.then(function () {
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+
+        <section>
+          <h2>Spectrogram</h2>
+
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var out = ctx.createGain();
+          var spectrogram = new Spectrogram({
+            width: 960,
+            height: 512
+          });
+          var spectrogramView = new SpectrogramView({
+            model: spectrogram
+          });
+          spectrogramView.$el.appendTo(div);
+          spectrogram.setNode(out, ctx);
+
+          microphone.then(function (m) {
+            m.connect(out);
+          });
+
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            spectrogram.update();
+          }());
+          end.then(function () {
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+        </section>
+
+        <section>
+        <section data-markdown>
+        # Web Audio API
+        </section>
+
+        <section data-markdown>
+          ## Abstract
+
+          > a high-level JavaScript API for processing and synthesizing audio in web applications. The primary paradigm is of an **audio routing graph**, where a number of **AudioNode** objects are connected together to define the overall audio rendering. The actual processing will primarily take place in the **underlying implementation** (typically optimized Assembly / C / C++ code), but **direct JavaScript** processing and synthesis is also supported.
+
+          [spec](https://dvcs.w3.org/hg/audio/raw-file/tip/webaudio/specification.html)
+        </section>
+
+        <section data-markdown>
+        ## Basic Modular Routing
+
+        ![](./images/modular-routing1.png)
+        </section>
+
+        <section data-markdown>
+        ## Modular Routing
+
+        ![](./images/modular-routing2.png)
+        </section>
+
+          <section data-markdown>
+          ## AudioContext
+
+```
+interface AudioContext : EventTarget {
+    readonly attribute AudioDestinationNode destination;
+    readonly attribute float sampleRate;
+    readonly attribute double currentTime;
+    readonly attribute AudioListener listener;
+
+    AudioBufferSourceNode createBufferSource();
+    MediaElementAudioSourceNode createMediaElementSource(HTMLMediaElement mediaElement);
+    MediaStreamAudioSourceNode createMediaStreamSource(MediaStream mediaStream);
+    MediaStreamAudioDestinationNode createMediaStreamDestination();
+    ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize = 0, optional unsigned long numberOfInputChannels = 2, optional unsigned long numberOfOutputChannels = 2);
+    AnalyserNode createAnalyser();
+    GainNode createGain();
+    DelayNode createDelay(optional double maxDelayTime = 1.0);
+    BiquadFilterNode createBiquadFilter();
+    WaveShaperNode createWaveShaper();
+    PannerNode createPanner();
+    ConvolverNode createConvolver();
+    ChannelSplitterNode createChannelSplitter(optional unsigned long numberOfOutputs = 6);
+    ChannelMergerNode createChannelMerger(optional unsigned long numberOfInputs = 6);
+    DynamicsCompressorNode createDynamicsCompressor();
+    OscillatorNode createOscillator();
+
+    PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag);
+    AudioBuffer createBuffer(unsigned long numberOfChannels, unsigned long length, float sampleRate);
+    void decodeAudioData(ArrayBuffer audioData, DecodeSuccessCallback successCallback, optional DecodeErrorCallback errorCallback);
+
+};
+```
+          </section>
+
+        <section data-markdown>
+          ## TL;DR.
+
+          * AudioContext allows to create different **AudioNode**.
+          * \+ constants: *sampleRate*, *currentTime*, *destination*
+        </section>
+
+        <section data-markdown>
+          ## different AudioNodes
+
+          * GainNode
+          * OscillatorNode
+          * BiquadFilterNode
+          * DynamicsCompressorNode
+          * DelayNode
+          * ConvolverNode
+          * WaveShaperNode
+          * PannerNode, ChannelSplitterNode, ChannelMergerNode
+          * AnalyserNode
+          * AudioBufferSourceNode
+          * MediaElementAudioSourceNode, MediaStreamAudioSourceNode, MediaStreamAudioDestinationNode
+          * ScriptProcessorNode
+        </section>
+
+<section data-markdown>
+## AudioNode
+
+```
+interface AudioNode : EventTarget {
+
+    void connect(AudioNode destination, optional unsigned long output = 0, optional unsigned long input = 0);
+    void connect(AudioParam destination, optional unsigned long output = 0);
+    void disconnect(optional unsigned long output = 0);
+
+    readonly attribute AudioContext context;
+    readonly attribute unsigned long numberOfInputs;
+    readonly attribute unsigned long numberOfOutputs;
+
+    // Channel up-mixing and down-mixing rules for all inputs.
+    attribute unsigned long channelCount;
+    attribute ChannelCountMode channelCountMode;
+    attribute ChannelInterpretation channelInterpretation;
+
+};
+```
+</section>
+
+        <section data-markdown>
+          ## TL;DR.
+
+          * an AudioNode is an abstract interface.
+          * an AudioNode can be connected to an **AudioNode**.
+          * an AudioNode can be connected to an **AudioParam**.
+          * an AudioNode generally have different **AudioParam**s.
+        </section>
+
+        <section data-markdown>
+          ## AudioParam
+
+```
+interface AudioParam {
+    attribute float value;
+    readonly attribute float defaultValue;
+
+    void setValueAtTime(float value, double startTime);
+    void linearRampToValueAtTime(float value, double endTime);
+    void exponentialRampToValueAtTime(float value, double endTime);
+
+    void setTargetAtTime(float target, double startTime, double timeConstant);
+
+    void setValueCurveAtTime(Float32Array values, double startTime, double duration);
+
+    void cancelScheduledValues(double startTime);
+};
+    ```
+  </section>
+
+        <section data-markdown>
+          ## TL;DR.
+
+          * an AudioParam represents a **value**.
+          * You can set/get it with the **value** field.
+          * You can **schedule** the value (setValueAtTime).
+          * You can **automate** the value. (linearRamp, exponentialRamp)
+        </section>
+
+        <section data-markdown>
+        ## Examples of value automation
+
+        ![](./images/audioparam-automation1.png)
+        </section>
+
+        </section>
+
+        <section>
+          <section data-markdown>
+            ## GainNode
+
+            The simplest and most used AudioNode.
+
+            It amplifies/reduces the amplitude of the audio stream.
+
+```
+interface GainNode : AudioNode {
+
+    readonly attribute AudioParam gain;
+
+};
+```
+          </section>
+        <section>
+          <h2>GainNode</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createGain();
+
+          var vizs = createVizs(ctx, div, out);
+
+          var gainParam = new Parameter({
+            from: 0,
+            to: 8,
+            value: 1,
+            title: "Gain"
+          });
+          var gainSlider = new ParameterSlider({
+            model: gainParam
+          });
+          gainSlider.$el.appendTo(div);
+          gainParam.on("change:value", function (m, value) {
+            out.gain.value = value;
+          });
+
+          music1.then(function (buffer) {
+            sample.buffer = buffer;
+            sample.start(ctx.currentTime);
+            sample.connect(out);
+          });
+
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            sample.stop(ctx.currentTime);
+            $(div).empty();
+          }).done();
+          });</script>
+        <p><em>Be careful with headphones.</em></p>
+        </section>
+        </section>
+        <section>
+        <section data-markdown>
+          ## OscillatorNode
+
+          Fundamental periodic waveform.
+
+```
+enum OscillatorType {
+  "sine",
+  "square",
+  "sawtooth",
+  "triangle",
+  "custom"
+};
+
+interface OscillatorNode : AudioNode {
+    attribute OscillatorType type;
+    readonly attribute AudioParam frequency; // in Hertz
+    readonly attribute AudioParam detune; // in Cents
+
+    void start(double when);
+    void stop(double when);
+    void setPeriodicWave(PeriodicWave periodicWave);
+    attribute EventHandler onended;
+};
+```
+        </section>
+
+        <section>
+          <h2>Oscillator</h2>
+
+          <pre><code data-trim class="javascript">
+var osc = ctx.createOscillator();
+osc.type = "sine"; // "triangle" or "sawtooth" or "square"
+osc.frequency = 440;
+osc.start(0);
+osc.connect(ctx.destination);
+          </code></pre>
+
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var out = ctx.createGain();
+          var osc = ctx.createOscillator();
+
+          var vizs = createVizs(ctx, div, out);
+
+          var types = ["sine", "triangle", "sawtooth", "square"];
+
+          var oscTypeParam = new Parameter({
+            values: types,
+            title: "Type",
+            value: 0
+          });
+          var oscTypeSlider = new ParameterSlider({
+            model: oscTypeParam
+          });
+          oscTypeSlider.$el.appendTo(div);
+          oscTypeParam.on("change:value", function (m, value) {
+            osc.type = types[value];
+          });
+
+          var freqParam = new Parameter({
+            from: 0,
+            to: 22000,
+            value: 440,
+            title: "Frequency"
+          });
+          var freqSlider = new ParameterSlider({
+            model: freqParam
+          });
+          freqSlider.$el.appendTo(div);
+
+          freqParam.on("change:value", function (m, value) {
+            osc.frequency.linearRampToValueAtTime(value, ctx.currentTime+0.1);
+          });
+
+          osc.connect(out);
+          out.connect(ctx.destination);
+          osc.start(ctx.currentTime);
+
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            osc.stop(ctx.currentTime);
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+
+        <section>
+          <h2>Oscillator Frequency Modulation</h2>
+
+          <img src="./images/fm_principle.png" style="width: 100%; background: #fff; padding: 10px" />
+
+          <pre><code data-trim class="javascript">
+var carrier = ctx.createOscillator(); carrier.start(0);
+var modulator = ctx.createOscillator(); modulator.start(0);
+var modGain = ctx.createGain(); modGain.gain.value = 440;
+modulator.connect(modGain);
+modGain.connect(carrier.frequency);
+carrier.connect(ctx.destination);
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Oscillator Frequency Modulation</h2>
+
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var out = ctx.createGain();
+
+          var carrier = ctx.createOscillator(); carrier.start(0);
+          var modulator = ctx.createOscillator(); modulator.start(0);
+          var modGain = ctx.createGain(); modGain.gain.value = 440;
+          modulator.connect(modGain);
+          modGain.connect(carrier.frequency);
+          carrier.connect(out);
+
+          var vizs = createVizs(ctx, div, out);
+
+          var freqParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 4000,
+            title: "Carrier Frequency"
+          });
+          var freqSlider = new ParameterSlider({
+            model: freqParam
+          });
+          freqSlider.$el.appendTo(div);
+          freqParam.on("change:value", function (m, value) {
+            carrier.frequency.value = value;
+            syncModGain();
+          });
+
+          var gainParam = new Parameter({
+            from: 0,
+            to: 1,
+            value: 1,
+            title: "Carrier Gain"
+          });
+          var gain = new ParameterSlider({
+            model: gainParam
+          });
+          gain.$el.appendTo(div);
+          gainParam.on("change:value", function (m, value) {
+            out.gain.value = value;
+          });
+
+          var modfreqParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 4000,
+            title: "Modulator Frequency"
+          });
+          var modfreqSlider = new ParameterSlider({
+            model: modfreqParam
+          });
+          modfreqSlider.$el.appendTo(div);
+          modfreqParam.on("change:value", function (m, value) {
+            modulator.frequency.value = value;
+          });
+
+          var modgainParam = new Parameter({
+            from: 0,
+            to: 1,
+            value: 1,
+            title: "Modulator Gain (%)"
+          });
+          var modgainV = new ParameterSlider({
+            model: modgainParam
+          });
+          modgainV.$el.appendTo(div);
+          modgainParam.on("change:value", function (m, value) {
+            syncModGain();
+          });
+
+          function syncModGain () {
+            modGain.gain.value = freqParam.get("value") * modgainParam.get("value");
+          }
+
+          freqParam.set("value", 110);
+          modfreqParam.set("value", 1);
+
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            carrier.stop(0);
+            modulator.stop(0);
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+        </section>
+
+        <section>
+          <section data-markdown>
+            ## AudioBufferSourceNode
+
+            Play a sample.
+
+```
+interface AudioBufferSourceNode : AudioNode {
+
+    attribute AudioBuffer? buffer;
+
+    readonly attribute AudioParam playbackRate;
+
+    attribute boolean loop;
+    attribute double loopStart;
+    attribute double loopEnd;
+
+    void start(optional double when = 0, optional double offset = 0, optional double duration);
+    void stop(optional double when = 0);
+
+    attribute EventHandler onended;
+
+};
+```
+          </section>
+        <section>
+          <h2>AudioBufferSourceNode</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createGain();
+
+          var vizs = createVizs(ctx, div, out);
+
+          var playbackRateParam = new Parameter({
+            curve: "quad",
+            from: 0.01,
+            to: 10,
+            value: 1,
+            title: "playbackRate"
+          });
+          var playback = new ParameterSlider({
+            model: playbackRateParam
+          });
+          playback.$el.appendTo(div);
+
+          playbackRateParam.on("change:value", function (m, value) {
+            sample.playbackRate.linearRampToValueAtTime(value, ctx.currentTime+0.2);
+          });
+
+          music2.then(function (buffer) {
+            sample.buffer = buffer;
+            sample.start(ctx.currentTime);
+            sample.connect(out);
+          });
+
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            sample.stop(ctx.currentTime);
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+        </section>
+
+        <section>
+        <section data-markdown>
+          ## BiquadFilterNode
+```
+enum BiquadFilterType {
+  "lowpass",
+  "highpass",
+  "bandpass",
+  "lowshelf",
+  "highshelf",
+  "peaking",
+  "notch",
+  "allpass"
+};
+
+interface BiquadFilterNode : AudioNode {
+
+    attribute BiquadFilterType type;
+    readonly attribute AudioParam frequency; // in Hertz
+    readonly attribute AudioParam detune; // in Cents
+    readonly attribute AudioParam Q; // Quality factor
+    readonly attribute AudioParam gain; // in Decibels
+
+    void getFrequencyResponse(Float32Array frequencyHz,
+                              Float32Array magResponse,
+                              Float32Array phaseResponse);
+
+};
+```
+          </section>
+
+        <section>
+          <h2>Filter</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createDynamicsCompressor();
+          var types = [
+          "lowpass",
+          "highpass",
+          "bandpass",
+          "lowshelf",
+          "highshelf",
+          "peaking",
+          "notch",
+          "allpass"
+          ];
+
+          var filter = ctx.createBiquadFilter();
+
+          var vizs = createVizs(ctx, div, out);
+
+          var typeParam = new Parameter({
+            values: types,
+            title: "Type"
+          });
+          var typeV = new ParameterSlider({
+            model: typeParam
+          });
+          typeV.$el.appendTo(div);
+          typeParam.on("change:value", function (m, value) {
+            filter.type = types[value];
+          });
+
+          var frequencyParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 15000,
+            value: 400,
+            title: "Frequency"
+          });
+          var frequency = new ParameterSlider({
+            model: frequencyParam
+          });
+          frequency.$el.appendTo(div);
+          frequencyParam.on("change:value", function (m, value) {
+            filter.frequency.value = value;
+          });
+
+          var qParam = new Parameter({
+            from: 0,
+            to: 50,
+            value: 0,
+            title: "Q"
+          });
+          var q = new ParameterSlider({
+            model: qParam
+          });
+          q.$el.appendTo(div);
+          qParam.on("change:value", function (m, value) {
+            filter.Q.value = value;
+          });
+
+          var gainParam = new Parameter({
+            from: 0,
+            to: 50,
+            value: 0,
+            title: "Gain"
+          });
+          var gain = new ParameterSlider({
+            model: gainParam
+          });
+          gain.$el.appendTo(div);
+          gainParam.on("change:value", function (m, value) {
+            filter.gain.value = value;
+          });
+
+          music2.then(function (buffer) {
+            sample.buffer = buffer;
+            sample.start(ctx.currentTime);
+            sample.connect(filter);
+          });
+
+          filter.connect(out);
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            sample.stop(ctx.currentTime);
+            $(div).empty();
+          }).done();
+        });</script>
+
+      <p style="font-size: 0.5em">
+        <em>N.B. The Gain only works with lowshelf, highshelf and peaking.
+          Also it is protected by a Compressor to not break your ears!</em>
+      </p>
+
+        </section>
+
+        <section>
+          <h2>Filter Cutoff LFO</h2>
+
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createDynamicsCompressor();
+
+          var filter = ctx.createBiquadFilter();
+
+          var lfo = ctx.createOscillator(); lfo.start(0);
+          var lfoGain = ctx.createGain();
+          lfo.connect(lfoGain);
+          lfoGain.connect(filter.frequency);
+
+          var vizs = createVizs(ctx, div, out);
+
+          var frequencyParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 15000,
+            title: "Filter Frequency 'center'"
+          });
+          var frequency = new ParameterSlider({
+            model: frequencyParam
+          });
+          frequency.$el.appendTo(div);
+          frequencyParam.on("change:value", function (m, value) {
+            filter.frequency.value = value;
+            syncLfoGain();
+          });
+
+          var qParam = new Parameter({
+            from: 0,
+            to: 50,
+            title: "Filter Q"
+          });
+          var q = new ParameterSlider({
+            model: qParam
+          });
+          q.$el.appendTo(div);
+          qParam.on("change:value", function (m, value) {
+            filter.Q.value = value;
+          });
+
+          var lfofreqParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 20,
+            title: "LFO Frequency"
+          });
+          var lfofreq = new ParameterSlider({
+            model: lfofreqParam
+          });
+          lfofreq.$el.appendTo(div);
+          lfofreqParam.on("change:value", function (m, value) {
+            lfo.frequency.value = value;
+          });
+
+          var lfogainParam = new Parameter({
+            from: 0,
+            to: 1,
+            title: "LFO Gain (%)"
+          });
+          var lfogainV = new ParameterSlider({
+            model: lfogainParam
+          });
+          lfogainV.$el.appendTo(div);
+          lfogainParam.on("change:value", function (m, value) {
+            syncLfoGain();
+          });
+
+          function syncLfoGain () {
+            lfoGain.gain.value = frequencyParam.get("value") * lfogainParam.get("value");
+          }
+
+          frequencyParam.set("value", 400);
+          lfofreqParam.set("value", 2);
+          lfogainParam.set("value", 1);
+
+          music2.then(function (buffer) {
+            sample.buffer = buffer;
+            sample.start(ctx.currentTime);
+            sample.connect(filter);
+          });
+
+          filter.connect(out);
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            sample.stop(ctx.currentTime);
+            $(div).empty();
+          }).done();
+        });</script>
+        </section>
+        </section>
+
+        <section>
+          <section data-markdown>
+          ## DelayNode
+          </section>
+        </section>
+        
+        <section>
+          <section data-markdown>
+          ## ConvolverNode
+          </section>
+        </section>
+        
+        <section>
+          <section data-markdown>
+          ## ScriptProcessorNode
+          </section>
+        </section>
+
+        <section>
+          <section data-markdown>
+          ## WaveShaperNode
+          </section>
+        </section>
+        
+        <section>
+          <section data-markdown>
+          ## ChannelSplitterNode
+          </section>
+        </section>
+        
+      </div>
+
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.min.js"></script>
+
+    <script>
+
+      // Full list of configuration options available here:
+      // https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+
+        theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+        transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+
+        // Optional libraries used to extend on reveal.js
+        dependencies: [
+          { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+          { src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+          { src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+          { src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+        ]
+      });
+
+    </script>
+
+  </body>
+</html>
