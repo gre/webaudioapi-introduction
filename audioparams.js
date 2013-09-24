@@ -80,8 +80,14 @@ ParameterSlider = Backbone.View.extend({
     '<span class="value" style="float:right"></span>'+
     '<input style="clear:both;width:100%;font:normal 1em monospace" id="<%= id %>" type="range" min="0" max="<%= granularity %>" />'
     ),
-  initialize: function () {
+  initialize: function (opts) {
     this.render();
+    if ('width' in opts) {
+      this.$el.css({
+        width: opts.width,
+        display: "inline-block"
+      });
+    }
     this.listenTo(this.model, "change:value", this.onValueChange);
   },
   getRangeValueFromModel: function () {
