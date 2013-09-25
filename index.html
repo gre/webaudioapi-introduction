@@ -798,6 +798,203 @@ function noteEnvelope (gainNode, time, volume, a, d, s, r) {
           <p style="font-size: 0.6em; font-style: italic">AZERTY keyboard is used here. try 'WXCVBN,' and 'AZERTYU' keys.</p>
 
         </section>
+        <section>
+          <h2>FM Oscillator + 2 envelopes</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createDynamicsCompressor();
+
+          var vizs = createVizs(ctx, div, out);
+
+          // TODO ADSR viz (editor?)
+
+          var attackParam = new Parameter({
+            from: 0, 
+            to: 4,
+            value: 0.1,
+            title: "Attack"
+          });
+          var decayParam = new Parameter({
+            from: 0, 
+            to: 4,
+            value: 0.2,
+            title: "Decay"
+          });
+          var sustainParam = new Parameter({
+            from: 0, 
+            to: 1,
+            value: 0.7,
+            title: "Sustain"
+          });
+          var releaseParam = new Parameter({
+            from: 0, 
+            to: 4,
+            value: 0.5,
+            title: "Release"
+          });
+
+          _.each([attackParam, decayParam, sustainParam, releaseParam], function (param) {
+            var slider = new ParameterSlider({
+              model: param,
+              width: "220px"
+            });
+            slider.$el.appendTo(div);
+            slider.$el.css({
+              "margin-left": "20px"
+            });
+          });
+
+          var modattackParam = new Parameter({
+            from: 0, 
+            to: 4,
+            value: 0.3,
+            title: "Attack"
+          });
+          var moddecayParam = new Parameter({
+            from: 0, 
+            to: 4,
+            value: 0.5,
+            title: "Decay"
+          });
+          var modsustainParam = new Parameter({
+            from: 0, 
+            to: 1,
+            value: 0.4,
+            title: "Sustain"
+          });
+          var modreleaseParam = new Parameter({
+            from: 0, 
+            to: 4,
+            value: 0.3,
+            title: "Release"
+          });
+
+          _.each([modattackParam, moddecayParam, modsustainParam, modreleaseParam], function (param) {
+            var slider = new ParameterSlider({
+              model: param,
+              width: "220px"
+            });
+            slider.$el.appendTo(div);
+            slider.$el.css({
+              "margin-left": "20px"
+            });
+          });
+
+          var modGainValue;
+          var ratio;
+          var modulationRatios = [
+            [1, 0.2],
+            [1, 0.25],
+            [1, 0.5],
+            [1, 1],
+            [1, 2],
+            [1, 3],
+            [1, 4],
+            [2, 1],
+            [2, 3],
+            [3, 2],
+            [3, 1],
+            [4, 1],
+            [4, 2],
+            [4, 3]
+          ];
+
+          var ratioParam = new Parameter({
+            values: modulationRatios,
+            title: "Ratios (carrier, modulator)"
+          });
+          var ratioView = new ParameterSlider({
+            model: ratioParam
+          });
+          ratioView.$el.appendTo(div);
+          ratioParam.on("change:value", function (m, i) {
+            ratio = modulationRatios[i];
+          });
+
+          var modGainParam = new Parameter({
+            from: 0,
+            to: 1,
+            title: "Mod Gain (%)"
+          });
+          var modGainView = new ParameterSlider({
+            model: modGainParam
+          });
+          modGainView.$el.appendTo(div);
+          modGainParam.on("change:value", function (m, value) {
+            modGainValue = value;
+          });
+
+          modGainParam.set("value", 1);
+          ratioParam.set("value", 1);
+
+          var notes = {};
+
+          function noteOn (note) {
+            if (note in notes) throw "Already playing";
+            var freq = NOTES[note];
+            if (!freq) throw "no such freq for note="+note;
+            var osc = ctx.createOscillator();
+            osc.type = "sine";
+            osc.frequency.value = freq*ratio[0];
+            osc.start(0);
+            var gain = ctx.createGain();
+
+            var mod = ctx.createOscillator(); mod.start(0);
+            mod.frequency.value = freq*ratio[1];
+            var modGain = ctx.createGain();
+            mod.connect(modGain);
+            modGain.connect(osc.frequency);
+
+            osc.connect(gain);
+            gain.connect(out);
+            var envelopeOff = noteEnvelope(gain, ctx.currentTime, 1, attackParam.get("value"), decayParam.get("value"), sustainParam.get("value"), releaseParam.get("value"));
+            var envelopeOffMod = noteEnvelope(modGain, ctx.currentTime, modGainValue*ratio[0]*freq, modattackParam.get("value"), moddecayParam.get("value"), modsustainParam.get("value"), modreleaseParam.get("value"));
+            notes[note] = { 
+              osc: osc, 
+              mod: mod,
+              gain: gain, 
+              envelopeOff: envelopeOff,
+              envelopeOffMod: envelopeOffMod
+            };
+          }
+          function noteOff (note) {
+            if (!(note in notes)) throw "no such notes";
+            var data = notes[note];
+            delete notes[note];
+            Q.all([
+              data.envelopeOffMod(ctx.currentTime),
+              data.envelopeOff(ctx.currentTime)
+            ]).then(function () {
+              data.osc.stop(0);
+              data.mod.stop(0);
+              data.gain.disconnect(out);
+            });
+          }
+
+          keyboard.on("noteOn", noteOn);
+          keyboard.on("noteOff", noteOff);
+
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            keyboard.off("noteOn", noteOn);
+            keyboard.off("noteOff", noteOff);
+            _.each(notes, function (data, note) {
+              noteOff(note);
+            });
+            out.disconnect(ctx.destination);
+            $(div).empty();
+          }).done();
+          });</script>
+        
+          <p style="font-size: 0.6em; font-style: italic">AZERTY keyboard is used here. try 'WXCVBN,' and 'AZERTYU' keys.</p>
+
+        </section>
         </section>
 
         <section>
@@ -1006,14 +1203,19 @@ interface BiquadFilterNode : AudioNode {
         </section>
 
         <section>
-          <h2>Filter Cutoff LFO</h2>
+          <h2>FM + Filter Cutoff LFO</h2>
 
         <script type="text/javascript">hookRevealJS(function (div, end) {
-          var sample = ctx.createBufferSource();
-          sample.loop = true;
+          
           var out = ctx.createDynamicsCompressor();
-
           var filter = ctx.createBiquadFilter();
+
+          var carrier = ctx.createOscillator(); carrier.start(0);
+          var modulator = ctx.createOscillator(); modulator.start(0);
+          var modGain = ctx.createGain(); modGain.gain.value = 440;
+          modulator.connect(modGain);
+          modGain.connect(carrier.frequency);
+          carrier.connect(filter);
 
           var lfo = ctx.createOscillator(); lfo.start(0);
           var lfoGain = ctx.createGain();
@@ -1081,16 +1283,25 @@ interface BiquadFilterNode : AudioNode {
             lfoGain.gain.value = frequencyParam.get("value") * lfogainParam.get("value");
           }
 
+          function noteOn (note) {
+            var freq = NOTES[note];
+            if (!freq) throw "no such freq";
+            setFreq(freq);
+          }
+
+          function setFreq (freq) {
+            modulator.frequency.value = 2*freq;
+            carrier.frequency.value = 0.5*freq;
+            modGain.gain.value = 2*freq;
+          }
+
+          setFreq(NOTES.C4);
+
           frequencyParam.set("value", 400);
           lfofreqParam.set("value", 2);
           lfogainParam.set("value", 1);
 
-          music2.then(function (buffer) {
-            sample.buffer = buffer;
-            sample.start(ctx.currentTime);
-            sample.connect(filter);
-          });
-
+          keyboard.on("noteOn", noteOn);
           filter.connect(out);
           out.connect(ctx.destination);
           (function loop () {
@@ -1099,8 +1310,8 @@ interface BiquadFilterNode : AudioNode {
             vizs.update();
           }());
           end.then(function () {
+            keyboard.off("noteOn", noteOn);
             out.disconnect(ctx.destination);
-            sample.stop(ctx.currentTime);
             $(div).empty();
           }).done();
         });</script>
@@ -1138,8 +1349,13 @@ interface DynamicsCompressorNode : AudioNode {
           var sineGain = ctx.createGain();
           sineGain.connect(out);
           sine.type = "sine";
-          sine.frequency.value = 500;
+          sine.frequency.value = 300;
           sine.connect(sineGain);
+          var kickVolume;
+          var kickFilter = ctx.createBiquadFilter();
+          kickFilter.frequency.value = 600;
+          kickFilter.Q.value = 6;
+          kickFilter.connect(out);
 
           var vizs = createVizs(ctx, div, out);
 
@@ -1161,7 +1377,7 @@ interface DynamicsCompressorNode : AudioNode {
             from: 0,
             to: 10,
             value: 1,
-            title: "Gain"
+            title: "Song Gain"
           });
           var gainSlider = new ParameterSlider({
             model: gainParam
@@ -1170,6 +1386,48 @@ interface DynamicsCompressorNode : AudioNode {
           gainParam.on("change:value", function (m, value) {
             gain.gain.value = value;
           });
+
+          var kickGainParam = new Parameter({
+            from: 0,
+            to: 10,
+            value: 1,
+            title: "Kick Gain"
+          });
+          var kickGainSlider = new ParameterSlider({
+            model: kickGainParam
+          });
+          kickGainSlider.$el.appendTo(div);
+          kickGainParam.on("change:value", function (m, value) {
+            kickVolume = value;
+          });
+
+
+          sinegainParam.set("value", 0);
+          gainParam.set("value", 0);
+          kickGainParam.set("value", 0);
+
+          function kick (note) {
+            var freq = NOTES[note];
+            if (!freq) throw "no such freq for note="+note;
+            var osc = ctx.createOscillator();
+            osc.type = "square";
+            osc.start(0);
+            var gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(kickFilter);
+            var t = ctx.currentTime;
+            osc.frequency.setValueAtTime(freq, t);
+            osc.frequency.linearRampToValueAtTime(0, t+0.2);
+            var envelopeOff = noteEnvelope(gain, t, kickVolume, 0.01, 0.1, 0.5, 0.2);
+            setTimeout(function(){ 
+              envelopeOff(t+0.2).then(function () {
+                osc.stop(0);
+                gain.disconnect(kickFilter);
+              });
+            }, 150);
+          }
+
+          keyboard.on("noteOn", kick);
 
           music2.then(function (buffer) {
             sample.buffer = buffer;
@@ -1188,6 +1446,7 @@ interface DynamicsCompressorNode : AudioNode {
             vizs.update();
           }());
           end.then(function () {
+            keyboard.off("noteOn", kick);
             out.disconnect(ctx.destination);
             sample.stop(ctx.currentTime);
             $(div).empty();
@@ -1343,7 +1602,7 @@ interface DelayNode : AudioNode {
 ```
           </section>
           <section>
-          <h2>"Repeater"</h2>
+          <h2>Delay effect example</h2>
           <img src="./images/repeater.png" style="padding: 10px; background: #fff" />
           </section>
           <section>
@@ -1380,7 +1639,7 @@ interface DelayNode : AudioNode {
           var repeatGainParam = new Parameter({
             from: 0,
             to: 1,
-            title: "Repeater Gain"
+            title: "Delay Gain"
           });
           repeatGainParam.on("change:value", function (m, value) {
             repeatGain.gain.value = value;
@@ -1394,7 +1653,7 @@ interface DelayNode : AudioNode {
             curve: "quad",
             from: 0,
             to: 2,
-            title: "Repeater Delay Time"
+            title: "Delay Time"
           });
           delayParam.on("change:value", function (m, value) {
             delay.delayTime.value = value;
@@ -1431,24 +1690,352 @@ interface DelayNode : AudioNode {
         <section>
           <section data-markdown>
           ## ConvolverNode
-          </section>
-        </section>
-        
-        <section>
-          <section data-markdown>
-          ## ScriptProcessorNode
-          </section>
-        </section>
+          
+          > ConvolverNode applies a linear convolution effect given an impulse response.
 
-        <section>
+          ![](./images/convolution.gif)
+          </section>
           <section data-markdown>
-          ## WaveShaperNode
+          ![](./images/music.png)
+
+          ![](./images/impulse.png)
+
+          ![](./images/music_reverbed.png)
+          </section>
+          <section>
+            <h2>Convolution</h2>
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createDynamicsCompressor();
+
+          var convFile = loadSound(ctx, "./audio/convolutions/Church-Schellingwoude.mp3");
+
+          var vizs = createVizs(ctx, div, out);
+
+          var convolver = ctx.createConvolver();
+          convolver.connect(out);
+
+          function replaceBuffer (c) {
+            convolver.buffer = c;
+          }
+
+          var p = $('<p></p>').appendTo(div);
+          var h3 = $('<label for="impulsefile">Select an Impulse Response Audio File: </label>').appendTo(p);
+          var fileInput = $('<input id="impulsefile" type="file" style="font-size: 0.8em; padding: 0.6em 0em; color: #000" />').appendTo(p);
+
+          convFile.then(replaceBuffer);
+          fileInput.on("change", function () {
+            loadFileAudio(ctx, fileInput[0]).then(replaceBuffer).done();
+          });
+
+          music2.then(function (buffer) {
+            sample.buffer = buffer;
+            sample.start(ctx.currentTime);
+            sample.connect(convolver);
+          });
+
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            $(div).empty();
+          }).done();
+        });</script>
+
+      <p style="font-size: 0.5em; font-style: italic">
+        You can find some Impulse Response on the internet (e.g. <a href="http://www.cksde.com/p_6_250.htm">here</a>),
+        or you can record it yourself!
+      </p>
+
           </section>
         </section>
         
         <section>
           <section data-markdown>
           ## ChannelSplitterNode
+
+          ![](./images/channel-splitter.png)
+          </section>
+        </section>
+        
+        <section>
+          <section data-markdown>
+          ## ChannelMergerNode
+
+          ![](./images/channel-merger.png)
+          </section>
+          <section data-markdown>
+          ## Making Stereo Echo Effects
+
+```
+// Schema:
+var input = ctx.createGain();
+var left = ctx.createGain();
+var right = ctx.createGain();
+var delayL = ctx.createDelay();
+var delayR = ctx.createDelay();
+var delayGainL = ctx.createGain();
+var delayGainR = ctx.createGain();
+input.connect(left);
+input.connect(right);
+left.connect(delayL);
+left.connect(delayR);
+delayL.connect(delayGainL);
+delayR.connect(delayGainR);
+delayGainL.connect(left);
+delayGainR.connect(right);
+var merger = ctx.createChannelMerger();
+left.connect(merger, 0, 0);
+right.connect(merger, 0, 1);
+
+// Basic Usage:
+delayL.delayTime.value = 0.2; // second
+delayL.delayTime.value = 0.3; // second
+delayGainL.gain.value = 0.3;
+delayGainR.gain.value = 0.4;
+
+anything.connect(input);
+merger.connect(ctx.destination);
+
+```
+          </section>
+          <section>
+          <h2>Stereo echo</h2>
+
+        <script type="text/javascript">hookRevealJS(function (div, end) {
+          var sample = ctx.createBufferSource();
+          sample.loop = true;
+          var out = ctx.createDynamicsCompressor();
+
+          var vizs = createVizs(ctx, div, out);
+
+          var input = ctx.createGain();
+          var left = ctx.createGain();
+          var right = ctx.createGain();
+          var delayL = ctx.createDelay();
+          var delayR = ctx.createDelay();
+          var delayGainL = ctx.createGain();
+          var delayGainR = ctx.createGain();
+          input.connect(left);
+          input.connect(right);
+          left.connect(delayL);
+          left.connect(delayR);
+          delayL.connect(delayGainL);
+          delayR.connect(delayGainR);
+          delayGainL.connect(left);
+          delayGainR.connect(right);
+          var merger = ctx.createChannelMerger();
+          left.connect(merger, 0, 0);
+          right.connect(merger, 0, 1);
+
+          merger.connect(out);
+
+          $('<h4>Left</h4>').appendTo(div);
+
+          var leftParam = new Parameter({
+            from: 0,
+            to: 1,
+            title: "Gain"
+          });
+          leftParam.on("change:value", function (m, value) {
+            left.gain.value = value;
+          });
+          var leftView = new ParameterSlider({
+            model: leftParam,
+            width: '30%'
+          });
+          leftView.$el.appendTo(div);
+
+          var delayGainLParam = new Parameter({
+            from: 0,
+            to: 1,
+            title: "Delay Gain"
+          });
+          delayGainLParam.on("change:value", function (m, value) {
+            delayGainL.gain.value = value;
+          });
+          var delayGainLView = new ParameterSlider({
+            model: delayGainLParam,
+            width: '30%'
+          });
+          delayGainLView.$el.appendTo(div);
+          delayGainLView.$el.css("margin-left", "5%");
+          
+          var delayLParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 2,
+            title: "Delay Time"
+          });
+          delayLParam.on("change:value", function (m, value) {
+            delayL.delayTime.value = value;
+          });
+          var delayLView = new ParameterSlider({
+            model: delayLParam,
+            width: '30%'
+          });
+          delayLView.$el.appendTo(div);
+          delayLView.$el.css("margin-left", "5%");
+
+          $('<h4>Right</h4>').appendTo(div);
+
+          var rightParam = new Parameter({
+            from: 0,
+            to: 1,
+            title: "Gain"
+          });
+          rightParam.on("change:value", function (m, value) {
+            right.gain.value = value;
+          });
+          var rightView = new ParameterSlider({
+            model: rightParam,
+            width: '30%'
+          });
+          rightView.$el.appendTo(div);
+
+          var delayGainRParam = new Parameter({
+            from: 0,
+            to: 1,
+            title: "Delay Gain"
+          });
+          delayGainRParam.on("change:value", function (m, value) {
+            delayGainR.gain.value = value;
+          });
+          var delayGainRView = new ParameterSlider({
+            model: delayGainRParam,
+            width: '30%'
+          });
+          delayGainRView.$el.appendTo(div);
+          delayGainRView.$el.css("margin-left", "5%");
+          
+          var delayRParam = new Parameter({
+            curve: "quad",
+            from: 0,
+            to: 2,
+            title: "Delay Time"
+          });
+          delayRParam.on("change:value", function (m, value) {
+            delayR.delayTime.value = value;
+          });
+          var delayRView = new ParameterSlider({
+            model: delayRParam,
+            width: '30%'
+          });
+          delayRView.$el.appendTo(div);
+          delayRView.$el.css("margin-left", "5%");
+          
+          music2.then(function (buffer) {
+            sample.buffer = buffer;
+            sample.start(ctx.currentTime);
+            sample.connect(input);
+          });
+
+          leftParam.set("value", 0.8);
+          delayLParam.set("value", 0.2);
+          delayGainLParam.set("value", 0.3);
+
+          rightParam.set("value", 0.8);
+          delayRParam.set("value", 0.3);
+          delayGainRParam.set("value", 0.4);
+
+          out.connect(ctx.destination);
+          (function loop () {
+            if (end.isFulfilled()) return;
+            requestAnimationFrame(loop);
+            vizs.update();
+          }());
+          end.then(function () {
+            out.disconnect(ctx.destination);
+            $(div).empty();
+          }).done();
+        });</script>
+          </section>
+        </section>
+
+        <section>
+          <section data-markdown>
+          ## WaveShaperNode
+
+          > WaveShaperNode is an AudioNode processor implementing non-linear distortion effects.
+          
+          > Non-linear waveshaping distortion is commonly used for both subtle non-linear warming, or more obvious distortion effects. Arbitrary non-linear shaping curves may be specified.
+
+
+          *(no example yet)*
+          </section>
+        </section>
+        
+        <section>
+          <section data-markdown>
+          ## ScriptProcessorNode
+
+          > This interface is an AudioNode which can generate, process, or analyse audio directly using JavaScript.
+          </section>
+          <section data-markdown>
+            ## ScriptProcessorNode Noise Implementation
+
+```
+var node = ctx.createScriptProcessor(1024, 1, 1);
+node.onaudioprocess = function (e) {
+  var output = e.outputBuffer.getChannelData(0);
+  for (var i = 0; i < output.length; i++) {
+    output[i] = Math.random();
+  }
+};
+node.connect(ctx.destination);
+```
+
+> N.B. It is recommended to use a buffer noise loop approach for better performances.
+
+**Indeed, ScriptProcessorNode can be CPU consuming.**
+          </section>
+        </section>
+
+        <section>
+
+          <section data-markdown>
+          # Final words
+          </section>
+
+          <section data-markdown>
+            ## Web Audio API is Awesome!
+
+            * Audio Nodes are simple but useful
+            * **Audio Modular** is very powerful
+            * Very efficient
+          </section>
+
+          <section data-markdown>
+            ## Cons
+
+            * **Implementing by Hand is quite heavy**
+              * A lot of LoC for doing your stuff
+              * counter-productive for testing / adjusting
+              * solution: making a node editor (Zound goal)
+            * **Today's support**
+              * Chrome Desktop: ok, still missing the `PeriodicWave`.
+              * Chrome Mobile: it works, but not so efficient.
+              * Firefox: only in Aurora, still in WIP
+          </section>
+
+          <section>
+            <h2>I made a game!</h2>
+
+            <a href="http://greweb.me/2013/09/timelapse/">
+              http://greweb.me/2013/09/timelapse/
+              <img src="./images/timelapse_game.png" width=500 alt="" />
+            </a>
+          </section>
+
+          <section data-markdown>
+            ## Questions?
+
+            [@greweb](http://twitter.com/greweb)
           </section>
         </section>
         

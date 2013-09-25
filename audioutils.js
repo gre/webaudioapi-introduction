@@ -112,6 +112,17 @@ function loadSound (ctx, url) {
   return d.promise;
 }
 
+function loadFileAudio (context, fileInput) {
+  var d = Q.defer();
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    context.decodeAudioData(this.result, d.resolve, d.reject);
+  };
+  reader.readAsArrayBuffer(fileInput.files[0]);
+  return d.promise;
+}
+
+
 function createVizs (ctx, container, out) {
 
   var div = $('<div style="margin-bottom: 20px" />').appendTo(container);
