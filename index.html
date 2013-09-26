@@ -37,6 +37,9 @@
       h1, h2, h3, h4 {
         clear: both;
       }
+      a.toggle-source {
+        font-size: 0.5em;
+      }
       input[type=range] {
         -webkit-appearance: none;
         -webkit-box-shadow: inset 0px 4px 10px rgba(0,0,0,0.5), 0px 2px 1px rgba(255,255,255,0.2);
@@ -107,16 +110,34 @@
       navigator.getUserMedia({ audio: true }, d.resolve, d.reject);
       return d.promise;
     }(Q.defer()));
-  var microphone = userAudio.then(function (stream) {
-    var mic = ctx.createMediaStreamSource(stream);
-    var gain = ctx.createGain();
-    gain.gain.value = 10;
-    var compr = ctx.createDynamicsCompressor();
-    mic.connect(gain);
-    gain.connect(compr);
-    return compr;
-  });
-    var keyboard = new KeyboardController();
+
+    var microphone = userAudio.then(function (stream) {
+      var mic = ctx.createMediaStreamSource(stream);
+      var gain = ctx.createGain();
+      gain.gain.value = 10;
+      var compr = ctx.createDynamicsCompressor();
+      mic.connect(gain);
+      gain.connect(compr);
+      return compr;
+    });
+
+    var queryStringParams = (function (queryString) {
+      return _.reduce(queryString.substring(1).split("&"), function (obj, param) {
+        var parts = param.split("=");
+        obj[parts[0]] = parts[1];
+        return obj;
+      }, {});
+    }(location.search));
+    window.KEYBOARD_LAYOUT = queryStringParams.azerty ? "AZERTY" : "QWERTY";
+
+    var keyboardController = new KeyboardController(KeyboardController[window.KEYBOARD_LAYOUT+"config"]);
+    var midiController = new MIDIController();
+
+    var keyboard = new Backbone.Model();
+    midiController.on("noteOn", _.bind(keyboard.trigger, keyboard, "noteOn"));
+    midiController.on("noteOff", _.bind(keyboard.trigger, keyboard, "noteOff"));
+    keyboardController.on("noteOn", _.bind(keyboard.trigger, keyboard, "noteOn"));
+    keyboardController.on("noteOff", _.bind(keyboard.trigger, keyboard, "noteOff"));
     </script>
 
     <div class="reveal">
@@ -794,8 +815,15 @@ function noteEnvelope (gainNode, time, volume, a, d, s, r) {
             $(div).empty();
           }).done();
           });</script>
-        
-          <p style="font-size: 0.6em; font-style: italic">AZERTY keyboard is used here. try 'WXCVBN,' and 'AZERTYU' keys.</p>
+
+        <hr />
+
+        <p style="font-size: 0.6em; font-style: italic">
+          QWERTY keyboard is used by default. 
+          try 'ZXCVBNM' and 'QWERTYU' keys. Black keys are also supported and you can change octaves with "." and "/" keys.
+          use ?azerty=1 in the URL if you prefer AZERTY.
+          MIDI keyboard is also supported! (today needs Chrome Canary with flags)
+        </p>
 
         </section>
         <section>
@@ -992,8 +1020,6 @@ function noteEnvelope (gainNode, time, volume, a, d, s, r) {
           }).done();
           });</script>
         
-          <p style="font-size: 0.6em; font-style: italic">AZERTY keyboard is used here. try 'WXCVBN,' and 'AZERTYU' keys.</p>
-
         </section>
         </section>
 
@@ -1705,34 +1731,70 @@ interface DelayNode : AudioNode {
           <section>
             <h2>Convolution</h2>
         <script type="text/javascript">hookRevealJS(function (div, end) {
-          var sample = ctx.createBufferSource();
-          sample.loop = true;
+          // Modules
           var out = ctx.createDynamicsCompressor();
+          var sample = ctx.createBufferSource(); sample.loop = true;
+          var convolver = ctx.createConvolver();
+          var dry = ctx.createGain();
+          var wet = ctx.createGain();
 
-          var convFile = loadSound(ctx, "./audio/convolutions/Church-Schellingwoude.mp3");
+          // Schema
+          sample.connect(dry);
+          sample.connect(wet);
+          dry.connect(out);
+          wet.connect(convolver);
+          convolver.connect(out);
+
+          var mix = new Parameter({
+            from: 0,
+            to: 1,
+            title: "Mix (Dry -> Wet)"
+          });
+          mix.on("change:value", function (m, value) {
+            dry.gain.value = 1-value;
+            wet.gain.value = value;
+          });
+          mix.set("value", 0.5);
+          var mixView = new ParameterSlider({
+            model: mix
+          });
+
+          var musics = [
+            music1,
+            music2
+          ];
+          var musicParam = new Parameter({
+            values: ["piano", "rock"],
+            title: "Music"
+          });
+          musicParam.on("change:value", function (m, value) {
+            musics[value].then(function (buffer) {
+              sample.buffer = buffer;
+              sample.start(ctx.currentTime);
+            });
+          });
+          musicParam.trigger("change:value", musicParam, musicParam.get("value"));
+          var musicView = new ParameterSlider({
+            model: musicParam
+          });
 
           var vizs = createVizs(ctx, div, out);
-
-          var convolver = ctx.createConvolver();
-          convolver.connect(out);
+          musicView.$el.appendTo(div);
+          mixView.$el.appendTo(div);
 
           function replaceBuffer (c) {
             convolver.buffer = c;
           }
 
+          var churchConv = loadSound(ctx, "./audio/convolutions/Church-Schellingwoude.mp3");
+
           var p = $('<p></p>').appendTo(div);
           var h3 = $('<label for="impulsefile">Select an Impulse Response Audio File: </label>').appendTo(p);
           var fileInput = $('<input id="impulsefile" type="file" style="font-size: 0.8em; padding: 0.6em 0em; color: #000" />').appendTo(p);
 
-          convFile.then(replaceBuffer);
+          churchConv.then(replaceBuffer);
           fileInput.on("change", function () {
             loadFileAudio(ctx, fileInput[0]).then(replaceBuffer).done();
-          });
-
-          music2.then(function (buffer) {
-            sample.buffer = buffer;
-            sample.start(ctx.currentTime);
-            sample.connect(convolver);
           });
 
           out.connect(ctx.destination);
